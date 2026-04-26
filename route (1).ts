@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreightMonitor</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#07090e;--bg2:#0c0f17;--bg3:#111520;
+  --border:rgba(255,255,255,0.055);--border2:rgba(255,255,255,0.11);
+  --text:#d8e0ed;--text2:#5e6b80;--text3:#38404f;
+  --accent:#00ddb3;--accent2:#2b8fff;--accent3:#ff6b35;--accent4:#fbbf24;
+  --red:#ef4444;--green:#22c55e;--purple:#a855f7;
+  --mono:'DM Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
+  --th:32px;--nh:44px;
+}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px}
+
+/* TICKER */
+.ticker{height:var(--th);background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;overflow:hidden;position:fixed;top:0;left:0;right:0;z-index:2000}
+.tlabel{flex-shrink:0;padding:0 14px;font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:.18em;color:var(--accent);text-transform:uppercase;border-right:1px solid var(--border);height:100%;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.tdot{width:5px;height:5px;border-radius:50%;background:var(--accent);animation:blink 1.4s infinite}
+.ttrack{flex:1;overflow:hidden;position:relative;height:100%;display:flex;align-items:center}
+.tinner{display:flex;white-space:nowrap;animation:scroll 70s linear infinite}
+.tinner:hover{animation-play-state:paused}
+.titem{display:inline-flex;align-items:center;gap:10px;padding:0 26px;font-size:11px;color:var(--text2);border-right:1px solid var(--border);height:var(--th)}
+.tsrc{font-family:var(--mono);font-size:9px;color:var(--accent3);letter-spacing:.07em;flex-shrink:0}
+.ttag{font-family:var(--mono);font-size:8.5px;padding:1px 5px;border-radius:2px;background:rgba(0,221,179,.1);color:var(--accent);flex-shrink:0}
+.titem a{color:var(--text);text-decoration:none}
+.titem a:hover{color:var(--accent)}
+@keyframes scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* TOPBAR */
+.topbar{height:var(--nh);padding:0 14px;border-bottom:1px solid var(--border);background:rgba(7,9,14,.96);backdrop-filter:blur(8px);position:fixed;top:var(--th);left:0;right:0;z-index:1000;display:flex;align-items:center}
+.logo{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.2em;color:var(--accent);display:flex;align-items:center;gap:8px;margin-right:24px;white-space:nowrap}
+.lring{width:17px;height:17px;border:1.5px solid var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center}
+.lring::before{content:'';width:5px;height:5px;background:var(--accent);border-radius:50%;animation:blink 2s infinite}
+.ntabs{display:flex;flex:1;overflow-x:auto;scrollbar-width:none}
+.ntabs::-webkit-scrollbar{display:none}
+.ntab{padding:0 12px;height:var(--nh);display:flex;align-items:center;gap:5px;font-size:10px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap;flex-shrink:0}
+.ntab:hover{color:var(--text)}
+.ntab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.tright{display:flex;align-items:center;gap:10px;margin-left:auto;flex-shrink:0}
+.live{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;color:var(--green);border:1px solid rgba(34,197,94,.2);border-radius:3px;padding:3px 8px}
+.ldot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 1.5s infinite}
+.tstamp{font-family:var(--mono);font-size:9px;color:var(--text3)}
+
+/* LAYOUT */
+.app{height:calc(100vh - var(--th) - var(--nh));margin-top:calc(var(--th) + var(--nh));overflow:hidden}
+.sec{display:none;height:100%;flex-direction:column;overflow:hidden}
+.sec.on{display:flex}
+
+/* FROW */
+.frow{display:flex;align-items:center;gap:5px;padding:6px 13px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;flex-wrap:wrap}
+.chip{padding:3px 10px;border-radius:3px;font-size:10px;font-weight:500;color:var(--text2);cursor:pointer;border:1px solid var(--border);transition:all .15s}
+.chip:hover{border-color:var(--accent2);color:var(--accent2)}
+.chip.on{background:rgba(43,143,255,.1);border-color:var(--accent2);color:var(--accent2)}
+.chip.ac{background:rgba(0,221,179,.1);border-color:var(--accent);color:var(--accent)}
+
+/* DASHBOARD */
+.dash{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;scrollbar-width:thin;scrollbar-color:var(--bg3) transparent}
+.dash::-webkit-scrollbar{width:3px}
+.dash::-webkit-scrollbar-thumb{background:var(--bg3)}
+
+/* KPI */
+.krow{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.kpi{background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:10px 12px;position:relative;overflow:hidden;transition:border-color .15s}
+.kpi:hover{border-color:var(--border2)}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--kc,var(--accent));opacity:.65}
+.kl{font-size:9px;color:var(--text2);letter-spacing:.07em;text-transform:uppercase;margin-bottom:5px}
+.kv{font-family:var(--mono);font-size:17px;font-weight:500;color:var(--text);line-height:1;margin-bottom:2px}
+.ks{font-size:9px;color:var(--text3)}
+.kd{font-family:var(--mono);font-size:9px;margin-top:4px}
+.up{color:var(--green)}.dn{color:var(--red)}
+
+/* PANEL */
+.panel{background:var(--bg2);border:1px solid var(--border);border-radius:5px;overflow:hidden}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border)}
+.pt{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);display:flex;align-items:center;gap:6px}
+.ptd{width:4px;height:4px;border-radius:50%}
+.ptag{font-family:var(--mono);font-size:8px;padding:2px 6px;border:1px solid var(--border);color:var(--text3);border-radius:2px}
+.pb{padding:12px}
+
+/* GRID */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+
+/* BAR CHART */
+.bc{display:flex;flex-direction:column;gap:6px}
+.br{display:flex;align-items:center;gap:7px}
+.bl{font-size:9px;color:var(--text2);width:72px;text-align:right;flex-shrink:0;font-family:var(--mono)}
+.bt{flex:1;height:4px;background:rgba(255,255,255,0.035);border-radius:2px;overflow:hidden}
+.bf{height:100%;border-radius:2px;transition:width .8s cubic-bezier(.4,0,.2,1)}
+.bv{font-family:var(--mono);font-size:9px;color:var(--text2);width:50px;flex-shrink:0}
+
+/* TABLE */
+.dt{width:100%;border-collapse:collapse}
+.dt th{font-size:8px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);padding:6px 10px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+.dt td{padding:7px 10px;font-size:11px;border-bottom:1px solid rgba(255,255,255,.022);color:var(--text2)}
+.dt td:first-child{color:var(--text)}
+.dt td.mn{font-family:var(--mono)}
+.dt tr:hover td{background:rgba(255,255,255,.018)}
+
+.badge{display:inline-block;font-family:var(--mono);font-size:8px;padding:1.5px 5px;border-radius:2px;letter-spacing:.04em}
+.b-g{background:rgba(34,197,94,.1);color:var(--green)}
+.b-r{background:rgba(239,68,68,.1);color:var(--red)}
+.b-y{background:rgba(251,191,36,.1);color:var(--accent4)}
+.b-b{background:rgba(43,143,255,.1);color:var(--accent2)}
+.b-n{background:rgba(255,255,255,.06);color:var(--text2)}
+
+/* MAP */
+.mwrap{flex:1;position:relative}
+.leaflet-container{background:#06080f!important}
+.leaflet-control-zoom{border:1px solid var(--border2)!important;background:var(--bg2)!important}
+.leaflet-control-zoom a{background:var(--bg2)!important;color:var(--text)!important;border-bottom:1px solid var(--border)!important}
+.leaflet-control-attribution{background:rgba(7,9,14,.85)!important;color:var(--text3)!important;font-size:8px!important}
+.leaflet-popup-content-wrapper{background:var(--bg2)!important;border:1px solid var(--border2)!important;border-radius:5px!important;color:var(--text)!important;box-shadow:0 8px 32px rgba(0,0,0,.6)!important}
+.leaflet-popup-tip{background:var(--bg2)!important}
+.leaflet-popup-content{margin:10px 13px!important;font-family:var(--sans)!important;font-size:11.5px!important}
+.pop-t{font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px}
+.pop-r{display:flex;justify-content:space-between;gap:14px;padding:3px 0;border-bottom:1px solid var(--border)}
+.pop-r:last-child{border:none}
+.pop-k{font-size:10px;color:var(--text2)}
+.pop-v{font-family:var(--mono);font-size:10px;color:var(--text)}
+
+/* MAP CONTROLS */
+.mctrl{position:absolute;top:10px;right:10px;z-index:800;display:flex;flex-direction:column;gap:5px}
+.lbtn{background:var(--bg2);border:1px solid var(--border2);border-radius:4px;padding:6px 11px;font-size:10px;color:var(--text2);cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
+.lbtn:hover{border-color:var(--accent);color:var(--accent)}
+.lbtn.on{background:rgba(0,221,179,.08);border-color:var(--accent);color:var(--accent)}
+.ldoti{width:7px;height:7px;border-radius:50%}
+
+/* MAP LEGEND */
+.mleg{position:absolute;bottom:10px;left:10px;z-index:800;background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:9px 11px}
+.mleg-t{font-size:8px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:7px}
+.mleg-r{display:flex;align-items:center;gap:7px;margin-bottom:4px}
+.mleg-l{font-size:10px;color:var(--text2)}
+
+/* MAP INFO BOX */
+.minfo{position:absolute;top:10px;left:10px;z-index:800;background:var(--bg2);border:1px solid var(--accent);border-radius:5px;padding:10px 12px;min-width:200px}
+.minfo-t{font-family:var(--mono);font-size:8.5px;color:var(--accent);letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px}
+.minfo-r{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)}
+.minfo-r:last-child{border:none}
+.minfo-k{font-size:10px;color:var(--text2)}
+.minfo-v{font-family:var(--mono);font-size:10px;color:var(--text)}
+
+/* NEWS */
+.ngrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.ncard{background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:12px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:7px}
+.ncard:hover{border-color:var(--border2)}
+.nc-top{display:flex;align-items:center;justify-content:space-between}
+.nc-src{font-family:var(--mono);font-size:8px;color:var(--accent3);letter-spacing:.07em}
+.nc-date{font-family:var(--mono);font-size:8px;color:var(--text3)}
+.nc-cat{font-family:var(--mono);font-size:8px;padding:1px 5px;border-radius:2px;border:1px solid var(--border);color:var(--text3);align-self:flex-start}
+.nc-title{font-size:11.5px;font-weight:500;color:var(--text);line-height:1.4}
+.nc-exc{font-size:10px;color:var(--text2);line-height:1.55}
+.nc-foot{display:flex;align-items:center;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border);margin-top:auto}
+.nc-tag{font-size:8.5px;color:var(--text3);background:rgba(255,255,255,.04);padding:2px 6px;border-radius:2px}
+.nc-link{font-size:9px;color:var(--accent2);font-family:var(--mono)}
+
+/* SPIN */
+.spin{width:14px;height:14px;border:1.5px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading{display:flex;align-items:center;gap:10px;padding:20px;font-size:11px;color:var(--text2)}
+
+/* SCRAPER */
+.si{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:9px 11px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.si-n{font-size:11px;color:var(--text);margin-bottom:2px}
+.si-u{font-family:var(--mono);font-size:8.5px;color:var(--text3)}
+.si-s{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;white-space:nowrap}
+.sdot{width:5px;height:5px;border-radius:50%}
+.s-ok{color:var(--green)}.s-ok .sdot{background:var(--green)}
+.s-pend{color:var(--accent4)}.s-pend .sdot{background:var(--accent4);animation:blink .8s infinite}
+.s-err{color:var(--red)}.s-err .sdot{background:var(--red)}
+
+/* SECTION DIVIDER */
+.sdiv{display:flex;align-items:center;gap:10px;font-size:8px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--text3)}
+.sdiv::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* SIDEBAR */
+.sidebar{width:290px;border-left:1px solid var(--border);background:var(--bg2);overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;scrollbar-width:thin;scrollbar-color:var(--bg3) transparent}
+
+canvas{display:block;width:100%}
+
+/* FLOW ANIM */
+@keyframes flowDash{to{stroke-dashoffset:-28}}
+</style>
+</head>
+<body>
+
+<!-- TICKER -->
+<div class="ticker">
+  <div class="tlabel"><div class="tdot"></div>NEWSY TSL</div>
+  <div class="ttrack"><div class="tinner" id="tickerInner"></div></div>
+  <div style="padding:0 10px;border-left:1px solid var(--border)">
+    <button onclick="refreshAll()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;transition:color .15s" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">⟳</button>
+  </div>
+</div>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="logo"><div class="lring"></div>FREIGHTMONITOR</div>
+  <div class="ntabs">
+    <div class="ntab on" onclick="nav('dash')" data-id="dash">◼ Dashboard</div>
+    <div class="ntab" onclick="nav('news')" data-id="news">⊞ Newsy branżowe</div>
+    <div class="ntab" onclick="nav('carriers')" data-id="carriers">🚂 Przewoźnicy</div>
+    <div class="ntab" onclick="nav('gpr')" data-id="gpr">→ Przepływy GPR 2025</div>
+    <div class="ntab" onclick="nav('nuts')" data-id="nuts">⬡ NUTS / Regiony</div>
+    <div class="ntab" onclick="nav('rail')" data-id="rail">⊟ Sieć kolejowa</div>
+    <div class="ntab" onclick="nav('ports')" data-id="ports">⚓ Porty EU</div>
+    <div class="ntab" onclick="nav('cupt')" data-id="cupt">€ CUPT / Inwestycje</div>
+    <div class="ntab" onclick="nav('pipeline')" data-id="pipeline">⟳ Pipeline danych</div>
+  </div>
+  <div class="tright">
+    <div class="live"><div class="ldot"></div>LIVE</div>
+    <div class="tstamp" id="tsEl">—</div>
+  </div>
+</div>
+
+<div class="app">
+
+<!-- ══ DASHBOARD ══════════════════════════════════════════════════ -->
+<div class="sec on" id="s-dash">
+  <div class="dash" id="dashContent">
+    <div class="loading"><div class="spin"></div>Ładowanie danych z API...</div>
+  </div>
+</div>
+
+<!-- ══ NEWS ═══════════════════════════════════════════════════════ -->
+<div class="sec" id="s-news">
+  <div class="frow">
+    <span style="font-size:8.5px;color:var(--text3);font-family:var(--mono);letter-spacing:.1em">FILTRY:</span>
+    <div class="chip on" data-src="">Wszystkie</div>
+    <div class="chip" data-src="rynekkolejowy">Rynek Kolejowy</div>
+    <div class="chip" data-src="nakolei">NaKolei.pl</div>
+    <div class="chip" data-src="sektorkolejowy">Sektorkolejowy</div>
+    <div class="chip" data-src="utk">UTK</div>
+    <div class="chip" data-src="gddkia">GDDKiA</div>
+    <div class="chip" data-src="mi">Min. Infrastruktury</div>
+    <div class="chip" data-src="plk">PKP PLK</div>
+    <div class="chip" data-src="pkpcargo">PKP Cargo</div>
+    <button onclick="loadNews()" style="margin-left:auto;background:var(--accent);color:var(--bg);border:none;border-radius:3px;padding:5px 12px;font-size:10px;font-weight:600;cursor:pointer">↺ Odśwież</button>
+  </div>
+  <div class="dash" id="newsContent">
+    <div class="loading"><div class="spin"></div>Ładowanie newsów...</div>
+  </div>
+</div>
+
+<!-- ══ CARRIERS ═══════════════════════════════════════════════════ -->
+<div class="sec" id="s-carriers">
+  <div class="dash" id="carriersContent">
+    <div class="loading"><div class="spin"></div>Ładowanie danych przewoźników...</div>
+  </div>
+</div>
+
+<!-- ══ GPR FLOW MAP ═══════════════════════════════════════════════ -->
+<div class="sec" id="s-gpr">
+  <div class="frow">
+    <span class="chip ac">GPR 2025 — DANE DOSTĘPNE</span>
+    <div class="chip on" id="animChip" onclick="toggleAnim()">⟳ Animacja</div>
+    <div class="chip on">Autostrady</div>
+    <div class="chip on">Ekspresowe</div>
+    <div class="chip on">Krajowe</div>
+    <div class="chip">Ciężkie pojazdy</div>
+    <span style="margin-left:auto;font-size:8.5px;color:var(--text3);font-family:var(--mono)">GDDKiA · 2402 odcinki · 18 249 km</span>
+  </div>
+  <div style="display:flex;flex:1;overflow:hidden">
+    <div class="mwrap">
+      <div id="mapGpr" style="width:100%;height:100%"></div>
+      <div class="minfo">
+        <div class="minfo-t">GPR 2025 — SDRR poj/dobę</div>
+        <div id="gprInfoRows"></div>
+      </div>
+      <div class="mleg">
+        <div class="mleg-t">Natężenie SDRR</div>
+        <div class="mleg-r"><div style="width:22px;height:4px;background:#ef4444;border-radius:2px"></div><div class="mleg-l">&gt;40 000</div></div>
+        <div class="mleg-r"><div style="width:22px;height:3.5px;background:#f97316;border-radius:2px"></div><div class="mleg-l">20–40 000</div></div>
+        <div class="mleg-r"><div style="width:22px;height:3px;background:#fbbf24;border-radius:2px"></div><div class="mleg-l">10–20 000</div></div>
+        <div class="mleg-r"><div style="width:22px;height:2px;background:#4ade80;border-radius:2px"></div><div class="mleg-l">&lt;10 000</div></div>
+      </div>
+    </div>
+    <div class="sidebar">
+      <div style="font-size:8.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3)">TOP odcinki SDRR</div>
+      <div class="bc" id="gprSideBar"></div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <div style="font-size:8.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Struktura ruchu</div>
+        <div style="height:140px"><canvas id="cGprStr"></canvas></div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <div style="font-size:8.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:7px">Wzrost vs GPR 2020</div>
+        <div id="gprGrowth" style="display:flex;flex-direction:column;gap:4px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ NUTS MAP ═══════════════════════════════════════════════════ -->
+<div class="sec" id="s-nuts">
+  <div class="frow">
+    <select id="nutsLvl" style="background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:4px 8px;font-size:10px;color:var(--text);font-family:var(--sans)">
+      <option>NUTS 1 — Makroregiony</option>
+      <option selected>NUTS 2 — Regiony</option>
+      <option>NUTS 3 — Podregiony</option>
+    </select>
+    <select id="nutsMode" style="background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:4px 8px;font-size:10px;color:var(--text);font-family:var(--sans)">
+      <option value="road">Drogowy</option><option value="rail">Kolejowy</option><option value="">Wszystkie</option>
+    </select>
+    <div class="chip on">Przepływy O/D</div>
+    <div class="chip on">Markery</div>
+    <span style="margin-left:auto;font-size:8.5px;color:var(--text3);font-family:var(--mono)">GUS BDL + Eurostat</span>
+  </div>
+  <div style="display:flex;flex:1;overflow:hidden">
+    <div class="mwrap"><div id="mapNuts" style="width:100%;height:100%"></div></div>
+    <div class="sidebar">
+      <div style="font-size:8.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3)">TOP przepływy (tys. t)</div>
+      <div id="nutsFlowList" style="display:flex;flex-direction:column;gap:5px"></div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <div style="font-size:8.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:7px">NST 2007</div>
+        <div style="height:150px"><canvas id="cNst"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RAIL MAP ═══════════════════════════════════════════════════ -->
+<div class="sec" id="s-rail">
+  <div class="frow">
+    <div class="chip on" onclick="setRailStyle('standard',this)">Infrastruktura</div>
+    <div class="chip" onclick="setRailStyle('maxspeed',this)">Prędkości</div>
+    <div class="chip" onclick="setRailStyle('signals',this)">Sygnalizacja</div>
+    <div class="chip" onclick="setRailStyle('electrification',this)">Elektryfikacja</div>
+    <span style="margin-left:auto;font-size:8.5px;color:var(--text3);font-family:var(--mono)">OpenRailwayMap CC-BY-SA 2.0</span>
+  </div>
+  <div class="mwrap"><div id="mapRail" style="width:100%;height:100%"></div></div>
+</div>
+
+<!-- ══ PORTS MAP ══════════════════════════════════════════════════ -->
+<div class="sec" id="s-ports">
+  <div style="display:flex;flex:1;overflow:hidden">
+    <div class="mwrap"><div id="mapPorts" style="width:100%;height:100%"></div></div>
+    <div class="sidebar">
+      <div style="font-size:8.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">TOP 14 portów EU — TEU mln</div>
+      <div class="bc" id="portBars"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CUPT ═══════════════════════════════════════════════════════ -->
+<div class="sec" id="s-cupt">
+  <div class="dash">
+    <div class="g4">
+      <div class="kpi" style="--kc:var(--accent2)"><div class="kl">CEF Transport PL</div><div class="kv">5.2 mld€</div><div class="ks">alokacja 2021–2027</div></div>
+      <div class="kpi" style="--kc:var(--accent2)"><div class="kl">KPO — transport</div><div class="kv">9.8 mld PLN</div><div class="ks">rail + drogi</div></div>
+      <div class="kpi" style="--kc:var(--accent)"><div class="kl">PKP PLK inwestycje</div><div class="kv">12.4 mld PLN</div><div class="ks">plan 2024</div></div>
+      <div class="kpi" style="--kc:var(--accent3)"><div class="kl">Projekty CUPT aktywne</div><div class="kv">287</div><div class="ks">transport EU</div></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><div class="pt"><div class="ptd" style="background:var(--accent2)"></div>PKP PLK — Projekty inwestycyjne 2024–2030</div><div class="ptag">CEF+KPO</div></div>
+      <div class="pb" style="padding:0">
+        <table class="dt">
+          <thead><tr><th>Projekt</th><th>Linia</th><th>Wartość</th><th>Finansowanie</th><th>Termin</th><th>Status</th><th>Zaawansowanie</th></tr></thead>
+          <tbody id="cuptRows"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="g2">
+      <div class="panel">
+        <div class="ph"><div class="pt"><div class="ptd" style="background:var(--accent)"></div>Programy grantowe TSL</div><div class="ptag">2021–2027</div></div>
+        <div class="pb" style="padding:0">
+          <table class="dt">
+            <thead><tr><th>Program</th><th>Pula</th><th>Max %</th><th>Focus TSL</th><th>Status</th></tr></thead>
+            <tbody id="grantRows"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><div class="pt"><div class="ptd" style="background:var(--accent2)"></div>Wartość projektów CUPT (mld PLN)</div><div class="ptag">2018–2024</div></div>
+        <div class="pb"><div style="height:190px"><canvas id="cCupt"></canvas></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PIPELINE ═══════════════════════════════════════════════════ -->
+<div class="sec" id="s-pipeline">
+  <div class="dash">
+    <div class="sdiv">Status scraperów</div>
+    <div id="scraperList" style="display:flex;flex-direction:column;gap:6px">
+      <div class="loading"><div class="spin"></div>Ładowanie statusu...</div>
+    </div>
+    <div class="sdiv">Uruchom pipeline ręcznie</div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button id="runBtn" onclick="runPipeline()" style="background:var(--accent);color:var(--bg);border:none;border-radius:4px;padding:8px 18px;font-size:11px;font-weight:600;cursor:pointer;transition:opacity .15s">▶ Uruchom pełny pipeline</button>
+      <span id="pipelineMsg" style="font-size:11px;color:var(--text2)"></span>
+    </div>
+    <div class="sdiv">Harmonogram auto-aktualizacji</div>
+    <div class="panel">
+      <div class="ph"><div class="pt"><div class="ptd" style="background:var(--accent)"></div>Vercel Cron Schedule</div><div class="ptag">vercel.json</div></div>
+      <div class="pb">
+        <pre style="font-family:var(--mono);font-size:9.5px;color:var(--text2);line-height:1.7;background:var(--bg3);border-radius:4px;padding:12px;overflow-x:auto">{
+  "crons": [
+    { "path": "/api/cron?secret=YOUR_SECRET", "schedule": "0 * * * *" },
+    { "path": "/api/cron?secret=YOUR_SECRET", "schedule": "0 6 * * *" }
+  ]
+}
+
+<span style="color:var(--accent2)">// /api/cron — uruchamia co godzinę:</span>
+<span style="color:var(--green)">// 1. scrapeAllNews()   — Rynek Kolejowy, NaKolei, UTK, GDDKiA, MIT, MAP, PLK, PKP Cargo</span>
+<span style="color:var(--green)">// 2. runFullPipeline() — UTK monthly, GPR 2025, carriers, NUTS flows</span>
+<span style="color:var(--accent4)">// Dane zapisywane do SQLite → serwowane przez /api/data i /api/news</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- end app -->
+
+<script>
+const API = ''  // same-origin; change to full URL when hosted separately
+
+// ══ DATA CACHE ═══════════════════════════════════════════════════
+const CACHE = {}
+async function apiFetch(path, ttl=120000) {
+  const now = Date.now()
+  if (CACHE[path] && now - CACHE[path].t < ttl) return CACHE[path].data
+  try {
+    const r = await fetch(API + path)
+    const j = await r.json()
+    CACHE[path] = { data: j, t: now }
+    return j
+  } catch(e) {
+    console.warn('API error', path, e)
+    return null
+  }
+}
+
+// ══ NAV ══════════════════════════════════════════════════════════
+function nav(id) {
+  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'))
+  document.querySelectorAll('.ntab').forEach(t=>t.classList.remove('on'))
+  document.getElementById('s-'+id).classList.add('on')
+  document.querySelector('[data-id="'+id+'"]').classList.add('on')
+  if (id==='dash') loadDash()
+  else if (id==='news') loadNews()
+  else if (id==='carriers') loadCarriers()
+  else if (id==='gpr' && !window._gprInit) { initGprMap(); window._gprInit=true }
+  else if (id==='nuts' && !window._nutsInit) { initNutsMap(); window._nutsInit=true }
+  else if (id==='rail' && !window._railInit) { initRailMap(); window._railInit=true }
+  else if (id==='ports' && !window._portsInit) { initPortsMap(); window._portsInit=true }
+  else if (id==='cupt') loadCupt()
+  else if (id==='pipeline') loadPipeline()
+}
+
+// ══ TIMESTAMP ════════════════════════════════════════════════════
+;(()=>{const d=new Date();document.getElementById('tsEl').textContent=d.getFullYear()+' Q'+Math.ceil((d.getMonth()+1)/3)})()
+
+// ══ TICKER ═══════════════════════════════════════════════════════
+const TICKER_STATIC = [
+  {src:'Rynek Kolejowy',cat:'TOWAROWY',txt:'PKP Cargo wraca na pozycję lidera intermodalnego — wyniki 2025',url:'https://rynek-kolejowy.pl'},
+  {src:'NaKolei.pl',cat:'TABOR',txt:'Newag podsumowuje 2025 r. — wzrost przychodów i rekordowe zyski',url:'https://nakolei.pl'},
+  {src:'Sektorkolejowy',cat:'INFRA',txt:'PLK wybierają ofertę ZUE i Duna Polska w przetargu na linię kolejową',url:'https://sektorkolejowy.pl'},
+  {src:'GDDKiA',cat:'GPR',txt:'GPR 2025: tabela SDRR dla 2402 odcinków krajowych — dostępna w XLSX',url:'https://gov.pl/gddkia'},
+  {src:'UTK',cat:'DANE',txt:'Dane UTK Q1 2025: wzrost przewozów intermodalnych o 9.7% r/r',url:'https://utk.gov.pl'},
+  {src:'PKP PLK',cat:'CEF',txt:'Rail Baltica E75: 38% zaawansowania — kolejne kontrakty w 2025',url:'https://plk-sa.pl'},
+  {src:'Min. Infrastruktury',cat:'eFTI',txt:'Konsultacje MIT ws. transpozycji eFTI do prawa polskiego zakończone',url:'https://gov.pl/infrastruktura'},
+  {src:'Eurostat',cat:'EU',txt:'Polska #2 w EU road freight — 312 mld tkm (Q4 2024)',url:'https://ec.europa.eu/eurostat'},
+  {src:'CUPT',cat:'GRANTY',txt:'CEF Transport 2025: nowa runda — 340 mln € dla TEN-T PL',url:'https://cupt.gov.pl'},
+  {src:'Port Gdańsk',cat:'PORT',txt:'DCT Gdańsk: rekordowe TEU w Q1 2025 — wzrost o 11% r/r',url:'https://portgdansk.pl'},
+]
+function buildTicker(items) {
+  const all = [...items, ...items]
+  document.getElementById('tickerInner').innerHTML = all.map(n=>`
+    <div class="titem"><span class="tsrc">${n.src||n.source}</span><span class="ttag">${n.cat||n.category}</span>
+    <a href="${n.url}" target="_blank">${n.txt||n.title}</a></div>`).join('')
+}
+async function refreshTicker() {
+  const r = await apiFetch('/api/news?limit=20',0)
+  const items = r?.data?.length ? r.data : TICKER_STATIC
+  buildTicker(items)
+}
+buildTicker(TICKER_STATIC)
+setTimeout(refreshTicker, 2000)
+
+// ══ CHARTS helper ════════════════════════════════════════════════
+const MONO='DM Mono,monospace', SANS='IBM Plex Sans,sans-serif'
+const C={a:'#00ddb3',a2:'#2b8fff',a3:'#ff6b35',a4:'#fbbf24',r:'#ef4444',g:'#22c55e',p:'#a855f7',t2:'#5e6b80',grid:'rgba(255,255,255,.04)'}
+function mkChart(id,type,labels,datasets,extra={}) {
+  const el=document.getElementById(id); if(!el)return
+  return new Chart(el,{type,data:{labels,datasets},options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{backgroundColor:'#111520',borderColor:'rgba(255,255,255,.07)',borderWidth:1,titleColor:'#d8e0ed',bodyColor:C.t2,padding:8}},
+    scales:{x:{grid:{color:C.grid},ticks:{color:C.t2,font:{family:MONO,size:9}}},y:{grid:{color:C.grid},ticks:{color:C.t2,font:{family:MONO,size:9}}}},
+    ...extra}})
+}
+function donut(id,labels,data,colors) {
+  const el=document.getElementById(id); if(!el)return
+  return new Chart(el,{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:colors,borderColor:'#0c0f17',borderWidth:3,hoverOffset:4}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
+      plugins:{legend:{display:true,position:'right',labels:{color:C.t2,font:{family:SANS,size:9},padding:5,boxWidth:8}},
+               tooltip:{backgroundColor:'#111520',borderColor:'rgba(255,255,255,.07)',borderWidth:1,titleColor:'#d8e0ed',bodyColor:C.t2,
+               callbacks:{label:c=>' '+c.label+': '+c.formattedValue+'%'}}}}})
+}
+
+// ══ DASHBOARD ════════════════════════════════════════════════════
+let _dashLoaded = false
+async function loadDash() {
+  if (_dashLoaded) return
+  _dashLoaded = true
+  const [sum, eu, ports] = await Promise.all([
+    apiFetch('/api/data?type=summary'),
+    apiFetch('/api/data?type=eu-ranking'),
+    apiFetch('/api/data?type=ports'),
+  ])
+  const s = sum?.data || {}
+  const euData = eu?.data || []
+  const portsData = ports?.data || []
+
+  document.getElementById('dashContent').innerHTML = `
+    <div class="krow">
+      <div class="kpi" style="--kc:var(--accent)"><div class="kl">Road freight PL</div><div class="kv">\${s.road_tkm_mld||312.4}</div><div class="ks">mld tkm / rok</div><div class="kd up">▲ \${s.road_tkm_delta||4.2}% r/r</div></div>
+      <div class="kpi" style="--kc:var(--accent2)"><div class="kl">Rail freight PL</div><div class="kv">\${s.rail_tkm_mld||54.8}</div><div class="ks">mld tkm / rok</div><div class="kd up">▲ \${s.rail_tkm_delta||1.9}% r/r</div></div>
+      <div class="kpi" style="--kc:var(--accent3)"><div class="kl">Porty PL łącznie</div><div class="kv">\${s.ports_mln_t||92.1}</div><div class="ks">mln ton / rok</div><div class="kd dn">▼ \${Math.abs(s.ports_delta||2.1)}% r/r</div></div>
+      <div class="kpi" style="--kc:var(--purple)"><div class="kl">Intermodalny PL</div><div class="kv">\${(s.intermodal_teu_tys||1182).toLocaleString()}</div><div class="ks">tys. TEU / rok</div><div class="kd up">▲ \${s.intermodal_delta||9.7}% r/r</div></div>
+      <div class="kpi" style="--kc:var(--accent4)"><div class="kl">Modal split road</div><div class="kv">\${s.modal_split_road_pct||82.3}%</div><div class="ks">udział w tkm PL</div><div class="kd dn">▼ 0.4 pp</div></div>
+      <div class="kpi" style="--kc:var(--green)"><div class="kl">GPR 2025 — odcinki</div><div class="kv">\${(s.gpr_odcinki||2402).toLocaleString()}</div><div class="ks">\${(s.gpr_km||18249).toLocaleString()} km dróg kraj.</div><div class="kd ac">✓ Dane dostępne</div></div>
+    </div>
+    <div class="g3">
+      <div class="panel">
+        <div class="ph"><div class="pt"><div class="ptd" style="background:var(--accent)"></div>Przewozy lądowe PL — tkm mld</div><div class="ptag">2019–2024</div></div>
+        <div class="pb"><div style="height:185px"><canvas id="cTkm"></canvas></div></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><div class="pt"><div class="ptd" style="background:var(--accent2)"></div>Modal split PL 2024</div><div class="ptag">tkm %</div></div>
+        <div class="pb">
+          <div style="height:145px"><canvas id="cModal"></canvas></div>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:8px">
+            \${[['var(--accent)','Drogowy','82.3%'],['var(--accent2)','Kolejowy','14.8%'],['var(--accent3)','Rurociągi','2.4%'],['var(--accent4)','Inne','0.5%']].map(([c,n,v])=>`
+            <div style="display:flex;justify-content:space-between"><span style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)"><span style="width:7px;height:7px;border-radius:1.5px;background:\${c};display:inline-block"></span>\${n}</span><span style="font-family:var(--mono);font-size:10px">\${v}</span></div>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><div class="pt"><div class="ptd" style="background:var(--accent4)"></div>EU Road ranking (mld tkm)</div><div class="ptag">Eurostat 2024</div></div>
+        <div class="pb">
+          <div class="bc">
+            \${euData.slice(0,7).map(r=>`<div class="br"><div class="bl" style="\${r.country==='PL'?'color:var(--accent)':''}">\${r.flag} \${r.country}</div><div class="bt"><div class="bf" style="width:\${(r.tkm/euData[0].tkm*100).toFixed(0)}%;background:\${r.country==='PL'?'var(--accent)':'var(--accent2)'}"></div></div><div class="bv" style="\${r.country==='PL'?'color:var(--accent)':''}">\${r.tkm}</div></div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="g2">
+      <div class="panel">
+        <div class="ph"><div class="pt"><div class="ptd" style="background:var(--purple)"></div>Intermodalny PL 2019–2024 (TEU tys.)</div><div class="ptag">UTK</div></div>
+        <div class="pb"><div style="height:140px"><canvas id="cInter"></canvas></div></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><div class="pt"><div class="ptd" style="background:var(--accent3)"></div>TOP porty EU — TEU mln</div><div class="ptag">2024</div></div>
+        <div class="pb">
+          <div class="bc">
+            \${portsData.slice(0,6).map(p=>`<div class="br"><div class="bl" style="\${p.country==='PL'?'color:var(--accent3)':''}">\${p.port.split('-')[0].split(' ')[0]}</div><div class="bt"><div class="bf" style="width:\${(p.teu_mln/portsData[0].teu_mln*100).toFixed(0)}%;background:\${p.country==='PL'?'var(--accent3)':'var(--accent2)'}"></div></div><div class="bv">\${p.teu_mln}</div></div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>`
+
+  // init charts
+  mkChart('cTkm','bar',['2019','2020','2021','2022','2023','2024'],
+    [{label:'Drogowy',data:[283,261,279,299,300,312],backgroundColor:'rgba(0,221,179,.15)',borderColor:C.a,borderWidth:1.5,borderRadius:3,stack:'s'},
+     {label:'Kolejowy',data:[56,51,53,56,54,55],backgroundColor:'rgba(43,143,255,.15)',borderColor:C.a2,borderWidth:1.5,borderRadius:3,stack:'s'}],
+    {scales:{x:{stacked:true,grid:{color:C.grid},ticks:{color:C.t2,font:{family:MONO,size:9}}},y:{stacked:true,grid:{color:C.grid},ticks:{color:C.t2,font:{family:MONO,size:9},callback:v=>v+' mld'}}}})
+  donut('cModal',['Drogowy','Kolejowy','Rurociągi','Inne'],[82.3,14.8,2.4,0.5],[C.a,C.a2,C.a3,C.a4])
+  mkChart('cInter','line',['2019','2020','2021','2022','2023','2024'],
+    [{label:'TEU',data:[712,698,801,952,1078,1182],borderColor:C.p,backgroundColor:'rgba(168,85,247,.07)',borderWidth:2,fill:true,tension:.4,pointRadius:3}])
+}
+
+// ══ NEWS ═════════════════════════════════════════════════════════
+let _newsFilter = ''
+document.querySelectorAll('[data-src]').forEach(c=>{
+  c.addEventListener('click',()=>{
+    document.querySelectorAll('[data-src]').forEach(x=>x.classList.remove('on'))
+    c.classList.add('on')
+    _newsFilter = c.dataset.src || ''
+    loadNews()
+  })
+})
+async function loadNews(refresh=false) {
+  const el = document.getElementById('newsContent')
+  el.innerHTML = '<div class="loading"><div class="spin"></div>Ładowanie newsów...</div>'
+  const url = '/api/news?limit=30' + (_newsFilter?'&source='+_newsFilter:'') + (refresh?'&refresh=1':'')
+  const r = await apiFetch(url, refresh?0:60000)
+  const items = r?.data || []
+  if (!items.length) { el.innerHTML='<div class="loading">Brak newsów. Spróbuj odświeżyć.</div>'; return }
+  el.innerHTML = '<div class="ngrid">' + items.map(n=>`
+    <div class="ncard" onclick="window.open('\${n.url}','_blank')">
+      <div class="nc-top"><span class="nc-src">\${(n.source||'').toUpperCase()}</span><span class="nc-date">\${n.publishedAt?.slice(0,10)||''}</span></div>
+      <span class="nc-cat">\${n.category||''}</span>
+      <div class="nc-title">\${n.title}</div>
+      <div class="nc-exc">\${(n.excerpt||'').slice(0,200)}</div>
+      <div class="nc-foot"><span class="nc-tag">\${n.tag||''}</span><span class="nc-link">→ czytaj</span></div>
+    </div>`).join('') + '</div>'
+}
+function refreshAll() { loadNews(true) }
+
+// ══ CARRIERS ═════════════════════════════════════════════════════
+let _carriersLoaded = false
+async function loadCarriers() {
+  if (_carriersLoaded) return
+  _carriersLoaded = true
+  const r = await apiFetch('/api/data?type=carriers&year=2024')
+  const data = r?.data || []
+  const el = document.getElementById('carriersContent')
+  el.innerHTML = `
+    <div class="g2" style="padding:12px;gap:10px">
+      <div class="panel">
+        <div class="ph"><div class="pt"><div class="ptd" style="background:var(--accent2)"></div>Udział w rynku rail freight PL 2024 — tkm</div><div class="ptag">UTK</div></div>
+        <div class="pb"><div style="height:270px"><canvas id="cCarrier"></canvas></div></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><div class="pt"><div class="ptd" style="background:var(--accent)"></div>Trend PKP Cargo vs rynek (mld tkm kwartalnie)</div><div class="ptag">2022–2024</div></div>
+        <div class="pb"><div style="height:270px"><canvas id="cCarrierTrend"></canvas></div></div>
+      </div>
+    </div>
+    <div class="panel" style="margin:0 12px 12px">
+      <div class="ph"><div class="pt"><div class="ptd" style="background:var(--accent3)"></div>Operatorzy kolejowi PL 2024 — tabela</div><div class="ptag">UTK · 43 operatorów</div></div>
+      <div class="pb" style="padding:0">
+        <table class="dt">
+          <thead><tr><th>#</th><th>Przewoźnik</th><th>Grupa</th><th>tkm mld</th><th>Masa mln t</th><th>Udział %</th><th>Intermod TEU</th><th>Zmiana</th></tr></thead>
+          <tbody>
+            \${data.map((d,i)=>`<tr>
+              <td>\${i+1}</td>
+              <td style="\${i===0?'color:var(--accent)':''}">\${d.operator||d.operator}</td>
+              <td>\${d.grp||d.group||'—'}</td>
+              <td class="mn">\${d.tkm_mld||'—'}</td>
+              <td class="mn">\${d.masa_mln_t||'—'}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <div style="width:50px;height:3px;background:var(--bg3);border-radius:2px"><div style="width:\${d.share_pct||0}%;height:100%;background:var(--accent2);border-radius:2px"></div></div>
+                  <span class="mn">\${d.share_pct||0}%</span>
+                </div>
+              </td>
+              <td class="mn">\${d.intermodal_teu||(d.intermodal_teu_tys?d.intermodal_teu_tys+'k':'—')}</td>
+              <td><span class="badge \${(d.delta_yoy||d.delta_yoy_pct||0)>=0?'b-g':'b-r'}">\${(d.delta_yoy||d.delta_yoy_pct||0)>=0?'▲':'▼'} \${Math.abs(d.delta_yoy||d.delta_yoy_pct||0)}%</span></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`
+
+  const cols = ['#2b8fff','#fbbf24','#00ddb3','#a855f7','#ff6b35','#06b6d4','#84cc16','#5e6b80','#64748b']
+  donut('cCarrier',data.map(d=>d.operator?.split(' ')[0]||'?'),data.map(d=>d.share_pct||0),cols)
+  mkChart('cCarrierTrend','line',
+    ['Q1-22','Q2-22','Q3-22','Q4-22','Q1-23','Q2-23','Q3-23','Q4-23','Q1-24','Q2-24','Q3-24','Q4-24'],
+    [{label:'PKP Cargo',data:[9.8,10.1,9.4,8.9,8.2,8.7,8.1,7.9,8.4,8.8,8.5,8.5],borderColor:C.a2,backgroundColor:'rgba(43,143,255,.07)',borderWidth:2,fill:true,tension:.3,pointRadius:2},
+     {label:'Rynek',data:[14.8,15.2,14.9,14.1,13.4,13.8,13.5,13.2,13.7,13.9,13.6,13.6],borderColor:C.a,backgroundColor:'rgba(0,221,179,.05)',borderWidth:1.5,fill:true,tension:.3,pointRadius:2,borderDash:[4,3]}],
+    {plugins:{legend:{display:true,labels:{color:C.t2,font:{family:SANS,size:10},boxWidth:12}},tooltip:{backgroundColor:'#111520',borderColor:'rgba(255,255,255,.07)',borderWidth:1,titleColor:'#d8e0ed',bodyColor:C.t2}}})
+}
+
+// ══ GPR FLOW MAP ══════════════════════════════════════════════════
+const GPR_ROADS=[
+  {n:'A4 Wrocław',from:[54.0,19.0],to:[51.1,17.0],sdrr:60474,col:'#ef4444',w:8},
+  {n:'A1 Gdańsk',from:[54.35,18.65],to:[51.26,19.36],sdrr:53200,col:'#ef4444',w:7},
+  {n:'A2 Warszawa',from:[52.25,21.0],to:[52.41,16.93],sdrr:49700,col:'#ef4444',w:7},
+  {n:'A4 Katowice',from:[51.1,17.0],to:[50.27,19.02],sdrr:44000,col:'#ef4444',w:6},
+  {n:'S1 Śląsk',from:[50.27,19.02],to:[49.79,22.04],sdrr:43500,col:'#f97316',w:5},
+  {n:'S7 Warszawa',from:[52.25,21.0],to:[50.06,19.94],sdrr:28400,col:'#fbbf24',w:4},
+  {n:'S3 Szczecin',from:[53.43,14.55],to:[52.41,16.93],sdrr:21700,col:'#fbbf24',w:3},
+  {n:'DK1 Łódź',from:[50.27,19.02],to:[51.77,19.45],sdrr:33400,col:'#fbbf24',w:3},
+  {n:'DK7 Kraków',from:[50.06,19.94],to:[52.25,21.0],sdrr:29100,col:'#4ade80',w:2},
+  {n:'DK8 Wrocław',from:[52.25,21.0],to:[51.1,17.0],sdrr:22400,col:'#4ade80',w:2},
+]
+let gprMap, gprLines=[], animOn=true
+function initGprMap() {
+  gprMap = L.map('mapGpr',{center:[52.1,19.4],zoom:6})
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    {attribution:'© OpenStreetMap © CARTO',maxZoom:19,subdomains:'abcd'}).addTo(gprMap)
+  drawGpr()
+
+  // Info panel + sidebar from API
+  apiFetch('/api/data?type=gpr&year=2025').then(r=>{
+    const data = r?.data || GPR_ROADS.map(g=>({droga:g.n,sdrr:g.sdrr,typ_drogi:g.col==='#ef4444'?'A':g.col==='#f97316'?'S':'K'}))
+    document.getElementById('gprInfoRows').innerHTML = data.slice(0,7).map(d=>`
+      <div class="minfo-r"><div class="minfo-k">\${d.droga||d.n} \${d.od_miejsce||''}</div><div class="minfo-v">\${(d.sdrr||0).toLocaleString()}</div></div>`).join('')
+    const mx = Math.max(...data.map(d=>d.sdrr||0))
+    document.getElementById('gprSideBar').innerHTML = data.slice(0,8).map(d=>`
+      <div class="br"><div class="bl" style="font-size:8.5px">\${d.droga}</div>
+      <div class="bt"><div class="bf" style="width:\${Math.round((d.sdrr||0)/mx*100)}%;background:\${d.sdrr>40000?'#ef4444':d.sdrr>20000?'#f97316':'#fbbf24'}"></div></div>
+      <div class="bv" style="font-size:8.5px">\${(d.sdrr||0).toLocaleString()}</div></div>`).join('')
+  })
+  document.getElementById('gprGrowth').innerHTML = [
+    ['Autostrady SDRR','+18.4%','g'],['Drogi ekspresowe','+22.1%','g'],
+    ['Drogi krajowe','+9.8%','g'],['Pojazdy ciężkie','+14.2%','g'],['Udział ciężkich','~20.1%','y'],
+  ].map(([k,v,c])=>`<div style="display:flex;justify-content:space-between"><span style="font-size:10px;color:var(--text2)">\${k}</span><span style="font-family:var(--mono);font-size:10px;color:var(--\${c==='g'?'green':c==='y'?'accent4':'red'})">\${v}</span></div>`).join('')
+
+  donut('cGprStr',['Osobowe','Lekkie','Ciężarowe','Z przyczepą','Autobusy','Motocykle'],[77.8,5.1,8.6,5.3,1.8,0.7],[C.a2,C.a,C.a4,C.a3,C.p,C.t2])
+}
+function drawGpr() {
+  gprLines.forEach(l=>gprMap.removeLayer(l)); gprLines=[]
+  GPR_ROADS.forEach(r=>{
+    const opts={color:r.col,weight:r.w,opacity:.75}
+    if(animOn) opts.dashArray='10 8'
+    const l=L.polyline([r.from,r.to],opts)
+    .bindPopup(`<div class="pop-t">\${r.n}</div><div class="pop-r"><div class="pop-k">SDRR (poj/dobę)</div><div class="pop-v">\${r.sdrr.toLocaleString()}</div></div>`)
+    .addTo(gprMap)
+    gprLines.push(l)
+  })
+}
+function toggleAnim() {
+  animOn=!animOn
+  document.getElementById('animChip').classList.toggle('on',animOn)
+  drawGpr()
+  // CSS animation on dash
+  document.querySelectorAll('.leaflet-interactive').forEach(el=>{
+    el.style.animationPlayState=animOn?'running':'paused'
+  })
+}
+
+// ══ NUTS MAP ══════════════════════════════════════════════════════
+const NUTS=[
+  {code:'PL92',name:'Mazowieckie',lat:52.25,lng:21.0,sent:9240,recv:8100},
+  {code:'PL22',name:'Śląskie',lat:50.27,lng:19.02,sent:11400,recv:12800},
+  {code:'PL51',name:'Dolnośląskie',lat:51.1,lng:17.0,sent:7820,recv:6200},
+  {code:'PL41',name:'Wielkopolskie',lat:52.41,lng:16.93,sent:6900,recv:5800},
+  {code:'PL63',name:'Pomorskie',lat:54.35,lng:18.65,sent:5400,recv:4800},
+  {code:'PL91',name:'Łódzkie',lat:51.77,lng:19.45,sent:4820,recv:5340},
+  {code:'PL21',name:'Małopolskie',lat:50.06,lng:19.94,sent:5600,recv:6400},
+  {code:'PL42',name:'Zachodniopom.',lat:53.43,lng:14.55,sent:3200,recv:4100},
+  {code:'PL61',name:'Kujawsko-Pom.',lat:53.01,lng:18.61,sent:4100,recv:3700},
+  {code:'PL82',name:'Podkarpackie',lat:49.79,lng:22.04,sent:2800,recv:3100},
+  {code:'PL81',name:'Lubelskie',lat:51.25,lng:22.57,sent:2200,recv:2600},
+  {code:'PL84',name:'Podlaskie',lat:53.13,lng:23.16,sent:1900,recv:2000},
+]
+function initNutsMap() {
+  const map=L.map('mapNuts',{center:[52.1,19.4],zoom:6})
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap © CARTO',maxZoom:19,subdomains:'abcd'}).addTo(map)
+  NUTS.forEach(r=>{
+    const sz=Math.max(8,Math.min(22,r.sent/650))
+    L.circleMarker([r.lat,r.lng],{radius:sz/2,color:C.a2,fillColor:C.a2,fillOpacity:.35,weight:1.5})
+    .bindPopup(`<div class="pop-t">\${r.name} (\${r.code})</div>
+      <div class="pop-r"><div class="pop-k">Nadane (tys. t)</div><div class="pop-v">\${r.sent.toLocaleString()}</div></div>
+      <div class="pop-r"><div class="pop-k">Odebrane (tys. t)</div><div class="pop-v">\${r.recv.toLocaleString()}</div></div>
+      <div class="pop-r"><div class="pop-k">Saldo</div><div class="pop-v">\${((r.recv-r.sent)>0?'+':'')+(r.recv-r.sent).toLocaleString()}</div></div>`).addTo(map)
+  })
+  const FLOWS=[['PL22','PL51',2840],['PL92','PL22',2210],['PL41','PL92',1980],['PL51','PL92',1740],['PL63','PL92',1520],['PL22','PL92',1440],['PL21','PL22',1120],['PL42','PL41',980]]
+  FLOWS.forEach(([fc,tc,vol])=>{
+    const a=NUTS.find(r=>r.code===fc),b=NUTS.find(r=>r.code===tc); if(!a||!b)return
+    L.polyline([[a.lat,a.lng],[b.lat,b.lng]],{color:C.a,weight:Math.max(1.5,Math.min(5,vol/700)),opacity:.5,dashArray:'6 4'}).addTo(map)
+  })
+  apiFetch('/api/data?type=nuts&year=2024').then(r=>{
+    const flows=r?.data||FLOWS.map(([f,t,v])=>{const a=NUTS.find(x=>x.code===f),b=NUTS.find(x=>x.code===t);return{name_from:a?.name||f,name_to:b?.name||t,vol_tys_t:v}})
+    document.getElementById('nutsFlowList').innerHTML=flows.slice(0,8).map(f=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:3px">
+        <div><div style="font-size:10px;color:var(--text)">\${f.name_from||f[0]} → \${f.name_to||f[1]}</div><div style="font-size:8.5px;color:var(--text3);font-family:var(--mono)">\${f.mode||'road'}</div></div>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--accent)">\${(f.vol_tys_t||f[2]||0).toLocaleString()} tys.t</span>
+      </div>`).join('')
+  })
+  donut('cNst',['Prod.rolne','Węgiel','Rudy','Chemikalia','Metale','Maszyny','Inne'],[8.2,18.4,6.1,11.3,14.2,9.8,32.0],['#4ade80','#6b7280','#ef4444','#a855f7','#3b82f6','#f97316','#0ea5e9'])
+}
+
+// ══ RAIL MAP ══════════════════════════════════════════════════════
+let railMap, ormLayer
+function initRailMap() {
+  railMap=L.map('mapRail',{center:[52.1,19.4],zoom:6})
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap © CARTO',maxZoom:19,subdomains:'abcd'}).addTo(railMap)
+  ormLayer=L.tileLayer('https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
+    {attribution:'© OpenRailwayMap CC-BY-SA',maxZoom:19,opacity:.85,tileSize:512,zoomOffset:-1}).addTo(railMap)
+  ;[
+    {n:'Gdańsk Port Północny',lat:54.40,lng:18.67,t:'port',l:'E65'},
+    {n:'Gdynia Port',lat:54.52,lng:18.55,t:'port',l:'E65'},
+    {n:'Szczecin Port Cent.',lat:53.43,lng:14.54,t:'port',l:'CE59'},
+    {n:'Małaszewicze',lat:52.06,lng:23.49,t:'graniczny',l:'E20'},
+    {n:'Zebrzydowice',lat:49.89,lng:18.36,t:'graniczny',l:'E65'},
+    {n:'Sławków Euroterminal',lat:50.32,lng:19.37,t:'terminal',l:'szeroki tor'},
+    {n:'Kutno PCC Intermodal',lat:52.23,lng:19.36,t:'terminal',l:'E20'},
+  ].forEach(s=>{
+    const col=s.t==='port'?C.a3:s.t==='graniczny'?C.a4:C.p
+    L.circleMarker([s.lat,s.lng],{radius:7,color:col,fillColor:col,fillOpacity:.8,weight:2})
+    .bindPopup(`<div class="pop-t">\${s.n}</div><div class="pop-r"><div class="pop-k">Typ</div><div class="pop-v">\${s.t}</div></div><div class="pop-r"><div class="pop-k">Linia</div><div class="pop-v">\${s.l}</div></div>`).addTo(railMap)
+  })
+}
+function setRailStyle(style,el) {
+  if(railMap&&ormLayer) railMap.removeLayer(ormLayer)
+  ormLayer=L.tileLayer(`https://tiles.openrailwaymap.org/\${style}/{z}/{x}/{y}.png`,{attribution:'© OpenRailwayMap CC-BY-SA',maxZoom:19,opacity:.85,tileSize:512,zoomOffset:-1})
+  if(railMap) ormLayer.addTo(railMap)
+  document.querySelectorAll('#s-rail .chip').forEach(c=>c.classList.remove('on'))
+  el?.classList.add('on')
+}
+
+// ══ PORTS MAP ════════════════════════════════════════════════════
+function initPortsMap() {
+  const map=L.map('mapPorts',{center:[48.5,10.0],zoom:4})
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap © CARTO',maxZoom:19,subdomains:'abcd'}).addTo(map)
+  apiFetch('/api/data?type=ports').then(r=>{
+    const data=r?.data||[]
+    data.forEach(p=>{
+      const col=p.country==='PL'?C.a3:C.a2
+      const sz=Math.max(5,Math.min(20,p.teu_mln||0))
+      L.circleMarker([0,0],{radius:0}).addTo(map)  // placeholder
+    })
+    // Hardcoded coords
+    const coords={Rotterdam:[51.89,4.15],'Antwerpen-Brügge':[51.23,4.40],Hamburg:[53.53,9.98],Algeciras:[36.14,-5.44],Valencia:[39.45,-0.31],Piraeus:[37.93,23.62],Bremerhaven:[53.55,8.57],Barcelona:[41.33,2.17],'Le Havre':[49.50,0.12],'Gdańsk DCT':[54.38,18.68],Koper:[45.55,13.73],Constanta:[44.17,28.65],'Gdynia BCT':[54.53,18.55],Szczecin:[53.43,14.55]}
+    data.forEach(p=>{
+      const c=coords[p.port]; if(!c)return
+      const col=p.country==='PL'?C.a3:C.a2
+      L.circleMarker(c,{radius:Math.max(5,Math.min(20,p.teu_mln)),color:col,fillColor:col,fillOpacity:p.country==='PL'?.9:.5,weight:2})
+      .bindPopup(`<div class="pop-t">\${p.port} ⚓</div><div class="pop-r"><div class="pop-k">Kraj</div><div class="pop-v">\${p.country}</div></div><div class="pop-r"><div class="pop-k">TEU mln/rok</div><div class="pop-v">\${p.teu_mln}</div></div><div class="pop-r"><div class="pop-k">Bulk mln t</div><div class="pop-v">\${p.bulk_mln_t}</div></div>`).addTo(map)
+    })
+    const sorted=[...data].sort((a,b)=>b.teu_mln-a.teu_mln)
+    const mx=sorted[0]?.teu_mln||1
+    document.getElementById('portBars').innerHTML=sorted.slice(0,14).map(p=>`
+      <div class="br"><div class="bl" style="font-size:8.5px;width:80px">\${p.port.split('-')[0].split(' ')[0]}</div>
+      <div class="bt"><div class="bf" style="width:\${(p.teu_mln/mx*100).toFixed(0)}%;background:\${p.country==='PL'?C.a3:C.a2}"></div></div>
+      <div class="bv" style="font-size:8.5px;width:36px">\${p.teu_mln}</div></div>`).join('')
+  })
+}
+
+// ══ CUPT ═════════════════════════════════════════════════════════
+function loadCupt() {
+  const projects=[
+    {name:'Rail Baltica (E75)',line:'E75',val:'14.5 mld PLN',fin:'CEF 85%',term:'2030',status:'Realizacja',pct:38},
+    {name:'CE 20 (E20)',line:'E20',val:'8.2 mld PLN',fin:'CEF+KPO',term:'2027',status:'Realizacja',pct:62},
+    {name:'Linia 7 Wwa–Lublin',line:'Nr 7',val:'4.8 mld PLN',fin:'CEF+RPO',term:'2028',status:'Przetarg',pct:12},
+    {name:'Śląski Węzeł Kol.',line:'1/137/139',val:'5.4 mld PLN',fin:'CEF',term:'2030',status:'Realizacja',pct:28},
+    {name:'LCS Łódź Fabryczna',line:'17/25',val:'2.1 mld PLN',fin:'CEF',term:'2026',status:'Zaawans.',pct:85},
+    {name:'Poznań–Frankfurt (O.)',line:'E20',val:'1.9 mld PLN',fin:'CEF TEN-T',term:'2026',status:'Zaawans.',pct:78},
+    {name:'KDP Warszawa–Łódź',line:'KDP-Y',val:'14.3 km odcinek',fin:'KPO',term:'2028',status:'Przetarg',pct:8},
+  ]
+  const grants=[
+    {name:'CEF Transport',pool:'5.2 mld €',pct:'85%',focus:'TEN-T infra',status:'Otwarty'},
+    {name:'Ścieżka SMART',pool:'1.8 mld PLN',pct:'80%',focus:'R&D, cyfr.',status:'Otwarty'},
+    {name:'Digital Europe',pool:'0.9 mld €',pct:'50%',focus:'eFTI, MaaS',status:'Rundy'},
+    {name:'Horizon Europe',pool:'konkurs.',pct:'100%',focus:'Autonomiczne',status:'Rundy'},
+    {name:'PARP Startup Booster',pool:'150 mln PLN',pct:'85%',focus:'eFTI startupy',status:'Otwarty'},
+    {name:'KPO — transport',pool:'9.8 mld PLN',pct:'100%',focus:'Rail, EV',status:'Selektyw.'},
+  ]
+  document.getElementById('cuptRows').innerHTML = projects.map(p=>`
+    <tr><td>\${p.name}</td><td>\${p.line}</td><td class="mn">\${p.val}</td><td>\${p.fin}</td><td class="mn">\${p.term}</td>
+    <td><span class="badge \${p.status==='Zaawans.'?'b-g':p.status==='Przetarg'?'b-b':'b-y'}">\${p.status}</span></td>
+    <td><div style="display:flex;align-items:center;gap:5px"><div style="width:60px;height:4px;background:var(--bg3);border-radius:2px"><div style="width:\${p.pct}%;height:100%;background:\${p.pct>70?'var(--green)':p.pct>40?'var(--accent4)':'var(--accent2)'};border-radius:2px"></div></div><span class="mn">\${p.pct}%</span></div></td>
+    </tr>`).join('')
+  document.getElementById('grantRows').innerHTML = grants.map(g=>`
+    <tr><td>\${g.name}</td><td class="mn">\${g.pool}</td><td class="mn">\${g.pct}</td><td>\${g.focus}</td>
+    <td><span class="badge \${g.status==='Otwarty'?'b-g':g.status==='Rundy'?'b-y':'b-n'}">\${g.status}</span></td></tr>`).join('')
+  if(!document.getElementById('cCupt')._chart) {
+    mkChart('cCupt','bar',['2018','2019','2020','2021','2022','2023','2024'],
+      [{label:'mld PLN',data:[4.2,6.8,5.1,8.4,11.2,9.8,12.4],backgroundColor:'rgba(43,143,255,.2)',borderColor:C.a2,borderWidth:1.5,borderRadius:3}])
+  }
+}
+
+// ══ PIPELINE ══════════════════════════════════════════════════════
+async function loadPipeline() {
+  const r = await apiFetch('/api/pipeline', 0)
+  const data = r?.data || []
+  document.getElementById('scraperList').innerHTML = data.length
+    ? data.map(s=>`
+      <div class="si">
+        <div style="flex:1"><div class="si-n">\${s.name}</div><div class="si-u">\${s.url}</div></div>
+        <div class="si-s \${s.status==='ok'?'s-ok':s.status==='error'?'s-err':'s-pend'}">
+          <div class="sdot"></div>
+          \${s.status==='ok'?'OK · '+new Date(s.last_run||Date.now()).toLocaleDateString('pl'):s.status==='error'?'Błąd':'Oczekuje'}
+          \${s.records>0?' · '+s.records+' rekordów':''}
+        </div>
+      </div>`).join('')
+    : '<div class="loading">Brak danych. Uruchom pipeline.</div>'
+}
+
+async function runPipeline() {
+  const btn=document.getElementById('runBtn'), msg=document.getElementById('pipelineMsg')
+  btn.disabled=true; btn.textContent='⟳ Uruchamianie...'
+  msg.textContent='Pipeline w toku...'
+  try {
+    const r=await fetch('/api/cron?secret=freightmonitor-dev')
+    const j=await r.json()
+    const total=j.results?.reduce((s,x)=>s+(x.records||0),0)||0
+    msg.textContent=`✓ Zakończono — \${total} rekordów (\${j.duration_ms||0}ms)`
+    CACHE['/api/pipeline']=null
+    await loadPipeline()
+  } catch(e) {
+    msg.textContent='Błąd: '+e.message
+  }
+  btn.disabled=false; btn.textContent='▶ Uruchom pełny pipeline'
+}
+
+// ══ BOOT ══════════════════════════════════════════════════════════
+loadDash()
+</script>
+</body>
+</html>

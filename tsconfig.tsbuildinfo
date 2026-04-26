@@ -1,0 +1,96 @@
+/**
+ * FreightMonitor — Database Layer (sql.js pure-JS SQLite)
+ */
+import path from 'path'
+import fs from 'fs'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyDB = any
+
+let _db: AnyDB | null = null
+
+const DB_PATH = process.env.DATABASE_URL?.replace('file:','') ??
+  path.join(process.cwd(), 'data', 'freightmonitor.db')
+
+export async function getDb(): Promise<AnyDB> {
+  if (_db) return _db
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const initSqlJs = require('sql.js/dist/sql-asm.js')
+  const SQL = await initSqlJs()
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true })
+  _db = fs.existsSync(DB_PATH)
+    ? new SQL.Database(fs.readFileSync(DB_PATH))
+    : new SQL.Database()
+  initSchema(_db)
+  return _db
+}
+
+export function saveDb(db: AnyDB) {
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true })
+  fs.writeFileSync(DB_PATH, Buffer.from(db.export()))
+}
+
+function initSchema(db: AnyDB) {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS news (
+      id TEXT PRIMARY KEY, title TEXT NOT NULL, excerpt TEXT, url TEXT,
+      source TEXT, source_key TEXT, category TEXT, tag TEXT,
+      published_at TEXT, fetched_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS utk_monthly (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, rok INTEGER, miesiac INTEGER,
+      operator TEXT, masa_tys_t REAL, tkm_mln REAL, source TEXT, fetched_at TEXT,
+      UNIQUE(rok,miesiac,operator)
+    );
+    CREATE TABLE IF NOT EXISTS gpr (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, odcinek_id TEXT, droga TEXT,
+      od_miejsce TEXT, do_miejsce TEXT, sdrr INTEGER, ciezkie_pct REAL,
+      typ_drogi TEXT, year INTEGER, fetched_at TEXT, UNIQUE(odcinek_id,year)
+    );
+    CREATE TABLE IF NOT EXISTS carrier_shares (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, operator TEXT, grp TEXT,
+      tkm_mld REAL, masa_mln_t REAL, share_pct REAL,
+      intermodal_teu REAL, delta_yoy REAL, year INTEGER, fetched_at TEXT,
+      UNIQUE(operator,year)
+    );
+    CREATE TABLE IF NOT EXISTS nuts_flows (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, nuts_from TEXT, nuts_to TEXT,
+      name_from TEXT, name_to TEXT, vol_tys_t REAL, mode TEXT, year INTEGER,
+      fetched_at TEXT, UNIQUE(nuts_from,nuts_to,mode,year)
+    );
+    CREATE TABLE IF NOT EXISTS scraper_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, status TEXT,
+      records INTEGER, error TEXT, ran_at TEXT
+    );
+  `)
+}
+
+export type Row = Record<string, string | number | null>
+
+export function dbAll(db: AnyDB, sql: string, params: (string|number|null)[] = []): Row[] {
+  const stmt = db.prepare(sql)
+  stmt.bind(params)
+  const rows: Row[] = []
+  while (stmt.step()) rows.push(stmt.getAsObject() as Row)
+  stmt.free()
+  return rows
+}
+
+export function dbGet(db: AnyDB, sql: string, params: (string|number|null)[] = []): Row|null {
+  return dbAll(db, sql, params)[0] ?? null
+}
+
+export function dbRun(db: AnyDB, sql: string, params: (string|number|null)[] = []) {
+  db.run(sql, params)
+}
+
+export function logScraper(db: AnyDB, source: string, status: string, records: number, error?: string) {
+  dbRun(db, 'INSERT INTO scraper_log (source,status,records,error,ran_at) VALUES (?,?,?,?,?)',
+    [source, status, records, error ?? null, new Date().toISOString()])
+  saveDb(db)
+}
+
+export function getScraperStatus(db: AnyDB): Row[] {
+  return dbAll(db, `SELECT source,status,records,ran_at FROM scraper_log
+    WHERE id IN (SELECT MAX(id) FROM scraper_log GROUP BY source) ORDER BY ran_at DESC`)
+}

@@ -1,0 +1,36 @@
+import { NextResponse } from 'next/server'
+import { getDb, getScraperStatus } from '@/lib/db'
+import { NEWS_SOURCES } from '@/lib/news-scraper'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const ALL_SOURCES = [
+  { key:'gpr2025',  name:'GDDKiA — GPR 2025 XLSX',              url:'gov.pl/gddkia' },
+  { key:'carriers', name:'Przewoźnicy — udziały UTK',           url:'dane.utk.gov.pl' },
+  { key:'utk',      name:'UTK — Urząd Transportu Kolejowego',   url:'dane.utk.gov.pl' },
+  { key:'nuts',     name:'Przepływy NUTS — GUS BDL',            url:'bdl.stat.gov.pl' },
+  ...NEWS_SOURCES.map(s => ({ key:s.key, name:s.name, url:s.rssUrl??s.url })),
+]
+
+export async function GET() {
+  const db = await getDb()
+  const statuses = getScraperStatus(db)
+  const statusMap: Record<string, {status:string;ran_at:string;records:number}> = {}
+  for (const row of statuses) {
+    statusMap[String(row.source)] = {
+      status: String(row.status),
+      ran_at: String(row.ran_at),
+      records: Number(row.records),
+    }
+  }
+
+  const result = ALL_SOURCES.map(s => ({
+    key: s.key, name: s.name, url: s.url,
+    status:  statusMap[s.key]?.status  ?? 'pending',
+    last_run:statusMap[s.key]?.ran_at  ?? null,
+    records: statusMap[s.key]?.records ?? 0,
+  }))
+
+  return NextResponse.json({ data: result, meta: { updated_at: new Date().toISOString() } })
+}
